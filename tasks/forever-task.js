@@ -1,26 +1,32 @@
-var forever     = require('forever'),
-    path        = require('path'),
-    logDir      = path.join(process.cwd(), '/forever'),
-    logFile     = path.join(logDir, '/log.log'),
-    outFile     = path.join(logDir, '/out.log'),    
-    errFile     = path.join(logDir, '/err.log'),
-    commandName = 'node',
-    commandMap  = {
-      start:      startForeverWithIndex,
-      stop:       stopOnProcess,
-      restart:    restartOnProcess,
-      list:       listOfProcess
+var forever         = require('forever'),
+    path            = require('path'),
+    extend          = require('util')._extend,
+    logDir          = path.join(process.cwd(), '/forever'),
+    logFile         = path.join(logDir, '/log.log'),
+    outFile         = path.join(logDir, '/out.log'),    
+    errFile         = path.join(logDir, '/err.log'),
+    commandName     = 'node',
+    commandMap      = {
+      start     :   startForeverWithIndex,
+      stop      :   stopOnProcess,
+      restart   :   restartOnProcess,
+      list      :   listOfProcess
     },
-    nodemailer = require('nodemailer'),
-    // create reusable transport method (opens pool of SMTP connections)
-    smtpTransport = nodemailer.createTransport("SMTP", {
-      service: "Gmail",
-      auth: {
-        user: "khader86@gmail.com",
-        pass: "Kjkszpd0987"
-      }
-    }),
-    done, gruntRef;
+    nodemailer      = require('nodemailer'),
+    mailOptions     = {
+      from      :   null,                         // sender address
+      to        :   null,                         // list of receivers
+      subject   :   'Nodemailer Subject',         // Subject line
+      text      :   'Nodemailer Text',            // plaintext body
+      html      :   '<b>Nodemailer HTML Text</b>' // html body
+    },
+    mailerTransport = {
+      type      :   'SMTP'
+      , service :   'Gmail'
+      , user    :   null
+      , pass    :   null
+    },
+    smtpTransport, done, gruntRef, max;
 
 /**
  * Logs message to console using log.writeln() from grunt.
@@ -129,7 +135,7 @@ function startForeverWithIndex( index ) {
         outFile: outFile,
         command: commandName,
         append: true,
-        max: 1000000
+        max: max
       });
       log( 'Logs can be found at ' + logDir + '.' );
       done();
@@ -166,17 +172,12 @@ function stopOnProcess(index) {
     else {
       warn( index + ' not found in list of processes in forever.' );
 
-      // setup e-mail data with unicode symbols
-      var mailOptions = {
-        from: "GPS Trace Service ✔ <khader86@gmail.com>", // sender address
-        to: "khadorkin@gmail.com, stde@gurtam.com, poal@gurtam.com", // list of receivers
-        subject: "Server down ✔", // Subject line
-        text: "Just now server is restarting. But limits have been exhausted ✔", // plaintext body
-        html: "<b>Just now server is restarting. But limits have been exhausted ✔</b>" // html body
-      }
-
       // send mail with defined transport object
-      smtpTransport.sendMail(mailOptions);
+      smtpTransport.sendMail(extend(mailOptions, {
+        subject: 'Server down ✔',
+        text: 'Just now server is restarting. But limits have been exhausted ✔',
+        html: '<b>Just now server is restarting. But limits have been exhausted ✔</b>'
+      }));
 
       startRequest();
 
@@ -203,17 +204,12 @@ function restartOnProcess( index ) {
     if(typeof process !== 'undefined') {
       log(forever.format(true,[process]));
 
-      // setup e-mail data with unicode symbols
-      var mailOptions = {
-        from: "GPS Trace Service ✔ <khader86@gmail.com>", // sender address
-        to: "khadorkin@gmail.com, stde@gurtam.com, poal@gurtam.com", // list of receivers
-        subject: "Server down ✔", // Subject line
-        text: "Just now server is restarting ✔", // plaintext body
-        html: "<b>Just now server is restarting ✔</b>" // html body
-      }
-
       // send mail with defined transport object
-      smtpTransport.sendMail(mailOptions);
+      smtpTransport.sendMail(extend(mailOptions, {
+        subject: 'Server down ✔',
+        text: 'Just now server is restarting ✔',
+        html: '<b>Just now server is restarting ✔</b>'
+      }));
 
       forever.restart(index, false);
     }
@@ -238,18 +234,35 @@ module.exports = function(grunt) {
           operation = target || this.options().operation || 'start';
 
       commandName = this.options().command;
+
+      max = this.options().max || 100;
+      
       if (this.options().logDir) {
         logDir  = path.join(process.cwd(), this.options().logDir) || logDir;
-        logFile = path.join(logDir, this.options().logFile || 'out.log');
+        logFile = path.join(logDir, this.options().logFile || 'log.log');
         errFile = path.join(logDir, this.options().errFile || 'err.log');
+        outFile = path.join(logDir, this.options().outFile || 'out.log');
       }
+      
+      if (this.options().mailerTransport) mailerTransport = extend(mailerTransport, this.options().mailerTransport || {});
+      // create reusable transport method
+      smtpTransport = nodemailer.createTransport(mailerTransport.type, {
+        service: mailerTransport.service,
+        auth: {
+          user: mailerTransport.user,
+          pass: mailerTransport.pass
+        }
+      });
+
+      // setup e-mail data
+      if (this.options().mailOptions) mailOptions = extend(mailOptions, this.options().mailOptions || {});
 
       try {
         if(commandMap.hasOwnProperty(operation)) {
           commandMap[operation].call(this, index);
         }
         else {
-          warn('Operation ' + operation + ' is not supported currently. Only forever:start, forever:stop or forever:restart.');
+          warn('Operation ' + operation + ' is not supported currently. Only forever:start, forever:stop, forever:restart or forever:list.');
         }
       }
       catch(e) {
