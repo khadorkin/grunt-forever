@@ -1,14 +1,25 @@
 var forever     = require('forever'),
     path        = require('path'),
     logDir      = path.join(process.cwd(), '/forever'),
-    logFile     = path.join(logDir, '/out.log'),
+    logFile     = path.join(logDir, '/log.log'),
+    outFile     = path.join(logDir, '/out.log'),    
     errFile     = path.join(logDir, '/err.log'),
     commandName = 'node',
     commandMap  = {
       start:      startForeverWithIndex,
       stop:       stopOnProcess,
-      restart:    restartOnProcess
+      restart:    restartOnProcess,
+      list:       listOfProcess
     },
+    nodemailer = require('nodemailer'),
+    // create reusable transport method (opens pool of SMTP connections)
+    smtpTransport = nodemailer.createTransport("SMTP", {
+      service: "Gmail",
+      auth: {
+        user: "khader86@gmail.com",
+        pass: "Kjkszpd0987"
+      }
+    }),
     done, gruntRef;
 
 /**
@@ -68,6 +79,33 @@ function findProcessWithIndex( index, callback ) {
   }
 }
 /**
+ * Attempts to get list of processes
+ */
+function listOfProcess() {
+  log( 'Attempting to get list of daemons.');
+
+  done = this.async();
+  var i, process;
+  try {
+    forever.list(false, function(context, list) {
+      if (!list) {
+        log( 'The list of processes in forever is empty.' );
+        done();
+      } else {
+        i = list.length;
+        while( --i > -1 ) {
+          process = list[i];
+          if ( process.hasOwnProperty('file') ) log( forever.format(true, [process]) );
+        }
+        done();
+      }
+    });
+  }
+  catch( e ) {
+    error( 'Error in trying to get list in forever. [REASON] :: ' + e.message );
+  }
+}
+/**
  * Attempts to start process using the index file.
  * @param  {String} index Filename.
  */
@@ -86,11 +124,12 @@ function startForeverWithIndex( index ) {
       gruntRef.file.mkdir(logDir);
       // 'forever start -o out.log -e err.log -c node -a -m 3 index.js';
       forever.startDaemon( index, {
+        logFile: logFile,
         errFile: errFile,
-        outFile: logFile,
+        outFile: outFile,
         command: commandName,
         append: true,
-        max: 3
+        max: 1000000
       });
       log( 'Logs can be found at ' + logDir + '.' );
       done();
@@ -103,6 +142,12 @@ function startForeverWithIndex( index ) {
  */
 function stopOnProcess(index) {
   log( 'Attempting to stop ' + index + '...' );
+  // generate delegate function to pass with proper contexts.
+  var startRequest = (function(context, index) {
+    return function() {
+        startForeverWithIndex.call(context, index);
+    };
+  }(this, index));
 
   done = this.async();
   findProcessWithIndex( index, function(process) {
@@ -119,7 +164,22 @@ function stopOnProcess(index) {
         });
     }
     else {
-      gruntRef.warn( index + ' not found in list of processes in forever.' );
+      warn( index + ' not found in list of processes in forever.' );
+
+      // setup e-mail data with unicode symbols
+      var mailOptions = {
+        from: "GPS Trace Service ✔ <khader86@gmail.com>", // sender address
+        to: "khadorkin@gmail.com, stde@gurtam.com, poal@gurtam.com", // list of receivers
+        subject: "Server down ✔", // Subject line
+        text: "Just now server is restarting. But limits have been exhausted ✔", // plaintext body
+        html: "<b>Just now server is restarting. But limits have been exhausted ✔</b>" // html body
+      }
+
+      // send mail with defined transport object
+      smtpTransport.sendMail(mailOptions);
+
+      startRequest();
+
       done();
     }
   });
@@ -142,6 +202,19 @@ function restartOnProcess( index ) {
   findProcessWithIndex( index, function(process) {
     if(typeof process !== 'undefined') {
       log(forever.format(true,[process]));
+
+      // setup e-mail data with unicode symbols
+      var mailOptions = {
+        from: "GPS Trace Service ✔ <khader86@gmail.com>", // sender address
+        to: "khadorkin@gmail.com, stde@gurtam.com, poal@gurtam.com", // list of receivers
+        subject: "Server down ✔", // Subject line
+        text: "Just now server is restarting ✔", // plaintext body
+        html: "<b>Just now server is restarting ✔</b>" // html body
+      }
+
+      // send mail with defined transport object
+      smtpTransport.sendMail(mailOptions);
+
       forever.restart(index, false);
     }
     else {
@@ -162,7 +235,7 @@ module.exports = function(grunt) {
   grunt.registerMultiTask( 'forever', 'Starts node app as a daemon.', function(target) {
 
       var index = this.options().index || 'index.js',
-          operation = target || 'start';
+          operation = target || this.options().operation || 'start';
 
       commandName = this.options().command;
       if (this.options().logDir) {
