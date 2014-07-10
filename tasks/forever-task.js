@@ -177,11 +177,12 @@ function stopOnProcess(index) {
         subject: 'Server down ✔',
         text: 'Just now server is restarting. But limits have been exhausted ✔',
         html: '<b>Just now server is restarting. But limits have been exhausted ✔</b>'
-      }));
-
-      startRequest();
-
-      done();
+      }), function(error, response) {
+        if (error) log(error);
+        else log('Message sent: ' + response.message);
+        startRequest();
+        done();
+      });
     }
   });
 }
@@ -209,15 +210,18 @@ function restartOnProcess( index ) {
         subject: 'Server down ✔',
         text: 'Just now server is restarting ✔',
         html: '<b>Just now server is restarting ✔</b>'
-      }));
-
-      forever.restart(index, false);
+      }), function(error, response) {
+        if (error) log(error);
+        else log('Message sent: ' + response.message);
+        forever.restart(index, false);
+        done();
+      });
     }
     else {
       log(index + ' not found in list of processes in forever. Starting new instance...');
       startRequest();
+      done();
     }
-    done();
   });
 }
 
