@@ -26,7 +26,7 @@ var forever         = require('forever'),
       , user    :   null
       , pass    :   null
     },
-    smtpTransport, done, gruntRef, max;
+    smtpTransport, done, gruntRef, max, commandFinish;
 
 /**
  * Logs message to console using log.writeln() from grunt.
@@ -180,8 +180,19 @@ function stopOnProcess(index) {
       }), function(error, response) {
         if (error) log(error);
         else log('Message sent: ' + response.message);
-        startRequest();
-        done();
+     
+        if (commandFinish) {
+          log( 'exec: '+ commandFinish );
+
+          var exec = require('child_process').exec;
+          exec(commandFinish, function(error, stdout, stderr) {
+            if (!error) startRequest();
+            done();
+          });
+        }
+        else {
+          done();
+        }
       });
     }
   });
@@ -260,6 +271,8 @@ module.exports = function(grunt) {
 
       // setup e-mail data
       if (this.options().mailOptions) mailOptions = extend(mailOptions, this.options().mailOptions || {});
+
+      if (this.options().commandFinish) commandFinish = this.options().commandFinish || commandFinish;
 
       try {
         if(commandMap.hasOwnProperty(operation)) {
